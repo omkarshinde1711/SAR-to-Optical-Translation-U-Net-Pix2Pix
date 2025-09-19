@@ -1,0 +1,57 @@
+# Python bytecode and build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# Virtual environments and env files
+.venv/
+venv/
+.env
+.env.*
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data and large artifacts (not tracked)
+data/
+datasets/
+results/
+scripts/results/
+*/results/
+outputs/
+logs/
+checkpoints/
+
+# Keep directory placeholders
+!data/.gitkeep
+!datasets/.gitkeep
+!results/.gitkeep
+!scripts/results/.gitkeep
+!outputs/.gitkeep
+!logs/.gitkeep
+!checkpoints/.gitkeep
+
+# Model and large weights
+*.pt
+*.pth
+*.onnx
+
+# Caches
+.cache/
+wandb/
+.lightning/
+*.log
+
+# Streamlit
+.streamlit/
+
+# Notebooks
+*.ipynb_checkpoints/

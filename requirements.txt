@@ -1,0 +1,11 @@
+numpy
+opencv-python
+rasterio
+matplotlib
+tqdm
+torch
+torchvision
+torchaudio
+torchmetrics
+lpips
+streamlit
