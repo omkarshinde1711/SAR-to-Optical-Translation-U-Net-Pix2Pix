@@ -1,0 +1,38 @@
+# Default Pix2Pix configuration
+# Core model parameters
+in_channels: 1
+out_channels: 3
+base_features: 64
+use_spectral_norm: false
+
+# Training parameters
+epochs: 100
+batch_size: 12
+lr: 0.0002
+betas: [0.5, 0.999]
+scheduler: "linear_decay"  # "linear_decay", "plateau", or null
+
+# Loss configuration
+adv_loss: "bce"  # "bce" or "hinge"
+lambda_l1: 100
+use_perceptual_loss: false
+lambda_perc: 1.0
+
+# Data parameters
+image_size: 256
+num_workers: 4
+
+# Training configuration
+checkpoint_interval: 5
+log_interval: 100
+early_stopping: true
+patience: 10
+
+# Reproducibility
+seed: 42
+
+# Warm-start (set to UNet checkpoint path if desired)
+warmstart_path: null
+
+# Experiment notes
+notes: "Default Pix2Pix configuration with L1 weight 100"
