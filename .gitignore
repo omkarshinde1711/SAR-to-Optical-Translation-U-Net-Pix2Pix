@@ -20,16 +20,21 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Data and large artifacts (not tracked)
+# Data and large artifacts
 data/
 datasets/
-results/
-scripts/results/
-*/results/
 outputs/
 logs/
 checkpoints/
 chats/
+
+# Results: keep CSVs/plots in repo, ignore heavy artifacts
+# (Allow tracking of results/* by not ignoring the folder itself)
+results/**/checkpoints/**
+results/**/tensorboard/**
+results/**/samples/**
+results/**/*.pt
+results/**/*.pth
 
 # Keep directory placeholders
 !data/.gitkeep
@@ -41,6 +46,7 @@ chats/
 !checkpoints/.gitkeep
 !checkpoints/unet/.gitkeep
 !checkpoints/pix2pix/.gitkeep
+!results/**/checkpoints/.gitkeep
 
 # Model and large weights
 *.pt

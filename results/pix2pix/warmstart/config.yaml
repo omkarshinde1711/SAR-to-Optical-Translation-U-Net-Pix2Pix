@@ -1,0 +1,24 @@
+adv_loss: bce
+base_features: 64
+batch_size: 12
+betas:
+- 0.5
+- 0.999
+checkpoint_interval: 5
+early_stopping: true
+epochs: 100
+image_size: 256
+in_channels: 1
+lambda_l1: 100
+lambda_perc: 1.0
+log_interval: 100
+lr: 0.0002
+notes: Pix2Pix with UNet warm-start initialization
+num_workers: 4
+out_channels: 3
+patience: 10
+scheduler: linear_decay
+seed: 42
+use_perceptual_loss: false
+use_spectral_norm: false
+warmstart_path: results/unet/checkpoints/epoch_99.pt
