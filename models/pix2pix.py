@@ -198,15 +198,15 @@ class VGGPerceptualLoss(nn.Module):
     def __init__(self, device='cuda'):
         super(VGGPerceptualLoss, self).__init__()
         
-        # Load pre-trained VGG16
-        import torchvision.models as models
-        vgg = models.vgg16(pretrained=True).features[:16]  # Up to conv3_3
+        # Load pre-trained VGG16 using weights API
+        from torchvision.models import vgg16, VGG16_Weights
+        vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # Up to conv3_3
         vgg.eval()
         
         # Freeze VGG parameters
         for param in vgg.parameters():
             param.requires_grad = False
-            
+        
         self.vgg = vgg.to(device)
         self.mse = nn.MSELoss()
     

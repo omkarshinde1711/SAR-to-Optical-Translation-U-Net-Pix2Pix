@@ -9,3 +9,6 @@ torchaudio
 torchmetrics
 lpips
 streamlit
+pandas
+plotly
+PyYAML

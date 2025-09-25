@@ -18,6 +18,8 @@ import torchvision.utils as vutils
 from src.data_loader import Sentinel
 from models.pix2pix import create_pix2pix_model
 from src.metrics import MetricsEvaluator
+from PIL import Image
+from typing import Optional, Tuple, Dict
 
 
 def parse_args():
@@ -272,3 +274,103 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# --- Importable helpers for UI (single-image inference & metrics) ---
+@torch.no_grad()
+def infer_single_image(
+    checkpoint_path: str,
+    sar_image: Image.Image,
+    image_size: int = 256,
+    device: Optional[torch.device] = None,
+) -> Tuple[torch.Tensor, object]:
+    """
+    Run Pix2Pix generator on a single SAR PIL image.
+    Returns:
+      - pred_tensor: torch.Tensor of shape [1,3,H,W] in [-1,1] on CPU
+      - pred_rgb_uint8: numpy array HxWx3 in [0,255] uint8
+    """
+    import numpy as np
+    device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Load checkpoint and config
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    config = checkpoint.get('config', {})
+
+    # Build model and load weights
+    model = create_pix2pix_model(config).to(device)
+    state = None
+    if isinstance(checkpoint, dict):
+        if 'model_state_dict' in checkpoint:
+            state = checkpoint['model_state_dict']
+        elif 'generator' in checkpoint:
+            # accept generator-only
+            try:
+                model.generator.load_state_dict(checkpoint['generator'])
+                state = None
+            except Exception:
+                state = checkpoint
+        elif 'model' in checkpoint:
+            state = checkpoint['model']
+        else:
+            state = checkpoint
+    else:
+        state = checkpoint
+    if state is not None:
+        try:
+            model.load_state_dict(state, strict=False)
+        except Exception:
+            # try partial for generator only
+            gen_sd = {k.replace('generator.', ''): v for k, v in state.items() if k.startswith('generator.')}
+            model.generator.load_state_dict({k: v for k, v in gen_sd.items() if k in model.generator.state_dict() and model.generator.state_dict()[k].shape == v.shape}, strict=False)
+
+    model.eval()
+
+    # Transforms and normalization consistent with training
+    base_t = v2.Compose([
+        v2.Resize((image_size, image_size)),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True)
+    ])
+    norm_sar = v2.Normalize(mean=[0.5], std=[0.5])
+
+    x = base_t(sar_image.convert('L'))  # [1,H,W]
+    x = norm_sar(x).unsqueeze(0).to(device)
+
+    pred = model.generator(x)
+
+    # Convert to uint8 RGB for display
+    pred_01 = ((pred.clamp(-1, 1) + 1) / 2).squeeze(0).detach().cpu()  # [3,H,W]
+    pred_rgb = (pred_01.permute(1, 2, 0).numpy() * 255.0).clip(0, 255).astype(np.uint8)
+    return pred.detach().cpu(), pred_rgb
+
+
+@torch.no_grad()
+def compute_metrics_single(
+    pred: torch.Tensor,
+    gt_rgb: Image.Image,
+    image_size: int = 256,
+    device: Optional[torch.device] = None,
+) -> Dict[str, float]:
+    """
+    Compute PSNR/SSIM/LPIPS/L1 for a single prediction tensor [-1,1] against a GT PIL RGB.
+    Returns a dict of metrics.
+    """
+    device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    evaluator = MetricsEvaluator(device)
+
+    base_t = v2.Compose([
+        v2.Resize((image_size, image_size)),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True)
+    ])
+    norm_rgb = v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+    t = base_t(gt_rgb.convert('RGB'))
+    t = norm_rgb(t).unsqueeze(0).to(device)
+    p = pred.to(device)
+
+    m = evaluator.evaluate_batch(p, t)
+    l1 = torch.nn.functional.l1_loss(p, t).item()
+    m['l1'] = l1
+    return m

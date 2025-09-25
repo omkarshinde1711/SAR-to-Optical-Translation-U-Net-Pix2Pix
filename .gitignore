@@ -29,6 +29,7 @@ scripts/results/
 outputs/
 logs/
 checkpoints/
+chats/
 
 # Keep directory placeholders
 !data/.gitkeep
@@ -38,6 +39,8 @@ checkpoints/
 !outputs/.gitkeep
 !logs/.gitkeep
 !checkpoints/.gitkeep
+!checkpoints/unet/.gitkeep
+!checkpoints/pix2pix/.gitkeep
 
 # Model and large weights
 *.pt
