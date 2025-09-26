@@ -23,9 +23,7 @@ Thumbs.db
 # Data and large artifacts
 data/
 datasets/
-outputs/
-logs/
-checkpoints/
+
 chats/
 
 # Results: keep CSVs/plots in repo, ignore heavy artifacts
