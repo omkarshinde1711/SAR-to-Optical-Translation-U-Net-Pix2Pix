@@ -270,3 +270,72 @@ After training, compare results across experiments:
 4. **Statistical analysis** of test set performance
 
 The implementation provides comprehensive logging and evaluation tools for thorough analysis of the Pix2Pix approach compared to the UNet baseline.
+
+## Pix2Pix Metrics Plots (TensorBoard export)
+
+You can export clean, publication-ready plots from TensorBoard logs and generate a quick summary report.
+
+Dependencies: tensorboard (event processing) and scipy (for smoothing).
+
+### Usage (import as functions)
+
+```python
+from scripts.plot_metrics_pix2pix import export_tensorboard_plots, create_summary_report
+
+export_tensorboard_plots(
+    logdir='results/pix2pix/pix2pix_20250920_005609/tensorboard',
+    output_dir='results/pix2pix/pix2pix_20250920_005609/plots'
+)
+
+create_summary_report(
+    logdir='results/pix2pix/pix2pix_20250920_005609/tensorboard',
+    output_dir='results/pix2pix/pix2pix_20250920_005609/plots'
+)
+```
+
+Example output files:
+
+```
+plots/
+├── train_loss.png
+├── val_loss.png  
+├── psnr.png
+├── ssim.png
+├── generator_loss.png
+├── discriminator_loss.png
+└── training_summary.txt
+```
+
+Each plot matches the clean PSNR style—individual, smoothed, and publication-ready. The bonus `training_summary.txt` gives a quick overview of key numbers without opening each plot.
+
+### Optional: export TensorBoard scalars to CSV
+
+If you want raw CSVs for custom analysis, you can export all scalar tags:
+
+```python
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+import pandas as pd
+import os
+
+def export_tensorboard_data(logdir, output_dir):
+    event_acc = EventAccumulator(logdir)
+    event_acc.Reload()
+    tags = event_acc.Tags()['scalars']
+    os.makedirs(output_dir, exist_ok=True)
+    for tag in tags:
+        scalar_events = event_acc.Scalars(tag)
+        df = pd.DataFrame([
+            {'step': e.step, 'value': e.value, 'wall_time': e.wall_time}
+            for e in scalar_events
+        ])
+        filename = tag.replace('/', '_').replace('\\', '_') + '.csv'
+        df.to_csv(os.path.join(output_dir, filename), index=False)
+
+# Example
+export_tensorboard_data(
+    'results/pix2pix/pix2pix_20250920_005609/tensorboard',
+    'results/pix2pix/pix2pix_20250920_005609/tensorboard_exports'
+)
+```
+
+This creates one CSV per scalar tag in the specified exports folder.

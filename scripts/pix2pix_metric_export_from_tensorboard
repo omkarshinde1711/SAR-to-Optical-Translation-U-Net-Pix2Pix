@@ -1,0 +1,31 @@
+# Create a script: export_tensorboard.py
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+import pandas as pd
+import os
+
+def export_tensorboard_data(logdir, output_dir):
+    event_acc = EventAccumulator(logdir)
+    event_acc.Reload()
+    
+    # Get all scalar tags
+    tags = event_acc.Tags()['scalars']
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for tag in tags:
+        scalar_events = event_acc.Scalars(tag)
+        df = pd.DataFrame([
+            {'step': e.step, 'value': e.value, 'wall_time': e.wall_time}
+            for e in scalar_events
+        ])
+        
+        # Clean filename
+        filename = tag.replace('/', '_').replace('\\', '_') + '.csv'
+        df.to_csv(os.path.join(output_dir, filename), index=False)
+        print(f"Exported {tag} to {filename}")
+
+# Usage
+export_tensorboard_data(
+    'results/pix2pix/pix2pix_20250920_005609/tensorboard',
+    'results/pix2pix/pix2pix_20250920_005609/tensorboard_exports'
+)

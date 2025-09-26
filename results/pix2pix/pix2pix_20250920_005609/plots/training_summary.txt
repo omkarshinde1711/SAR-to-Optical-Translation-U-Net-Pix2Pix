@@ -1,0 +1,66 @@
+Training Results Summary
+==============================
+
+G Loss:
+  Best: 19.9864 (Epoch 31)
+  Final: 21.4024 (Epoch 41)
+
+D Loss:
+  Best: 0.2424 (Epoch 41)
+  Final: 0.2424 (Epoch 41)
+
+Adv Loss:
+  Best: 1.6068 (Epoch 12)
+  Final: 2.7206 (Epoch 41)
+
+Recon Loss:
+  Best: 0.1822 (Epoch 33)
+  Final: 0.1868 (Epoch 41)
+
+Perc Loss:
+  Best: 0.0000 (Epoch 4)
+  Final: 0.0000 (Epoch 41)
+
+Psnr:
+  Best: 17.5965 (Epoch 33)
+  Final: 17.3891 (Epoch 41)
+
+Ssim:
+  Best: 0.2825 (Epoch 33)
+  Final: 0.2684 (Epoch 41)
+
+Lpips:
+  Best: 0.5697 (Epoch 4)
+  Final: 0.4747 (Epoch 41)
+
+Val G Loss:
+  Best: 21.5234 (Epoch 34)
+  Final: 21.6515 (Epoch 41)
+
+Val D Loss:
+  Best: 0.6595 (Epoch 38)
+  Final: 0.9344 (Epoch 41)
+
+Val Adv Loss:
+  Best: 0.8645 (Epoch 9)
+  Final: 1.5060 (Epoch 41)
+
+Val Recon Loss:
+  Best: 0.2015 (Epoch 41)
+  Final: 0.2015 (Epoch 41)
+
+Val Perc Loss:
+  Best: 0.0000 (Epoch 4)
+  Final: 0.0000 (Epoch 41)
+
+Val Psnr:
+  Best: 16.8542 (Epoch 41)
+  Final: 16.8542 (Epoch 41)
+
+Val Ssim:
+  Best: 0.2494 (Epoch 34)
+  Final: 0.2428 (Epoch 41)
+
+Val Lpips:
+  Best: 0.5639 (Epoch 4)
+  Final: 0.4866 (Epoch 41)
