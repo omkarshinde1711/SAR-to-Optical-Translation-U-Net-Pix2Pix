@@ -1,5 +1,7 @@
 import sys
 from pathlib import Path
+import os
+import urllib.request
 
 import streamlit as st
 import torch
@@ -38,6 +40,24 @@ def project_path(p: str | Path) -> Path:
 def denorm_rgb(t: torch.Tensor) -> torch.Tensor:
     # expects [-1,1], returns [0,1]
     return (t.clamp(-1, 1) + 1) / 2
+
+
+def resolve_ckpt(ckpt_path: str, secret_key: str) -> str:
+    """
+    Resolve a checkpoint path:
+      - if exists locally -> return absolute path
+      - else, download from Hugging Face URL in st.secrets[secret_key] to the intended local path
+    """
+    target = project_path(ckpt_path)
+    if target.exists():
+        return str(target)
+    url = st.secrets.get(secret_key)
+    if url:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with st.spinner(f"Downloading checkpoint from Hugging Face ({secret_key})..."):
+            urllib.request.urlretrieve(url, str(target))
+        return str(target)
+    raise FileNotFoundError(f"Checkpoint not found locally and no secret '{secret_key}' configured.")
 
 
 # --- Transforms
@@ -95,7 +115,8 @@ def run_unet_inference(ckpt_path: str, sar_pil: Image.Image, image_size: int) ->
     import numpy as np
     base_t, norm_sar, _ = build_transforms(image_size)
     x = norm_sar(base_t(sar_pil.convert('L'))).unsqueeze(0).to(device)
-    model = load_unet(ckpt_path)
+    resolved = resolve_ckpt(ckpt_path, "unet_ckpt_url")
+    model = load_unet(resolved)
     y = model(x)
     y01 = denorm_rgb(y).squeeze(0).cpu()
     rgb = (y01.permute(1, 2, 0).numpy() * 255.0).clip(0, 255).astype(np.uint8)
@@ -121,7 +142,8 @@ def run_inference(model_name: str, ckpt_path: str, sar_pil: Image.Image, image_s
             metrics = m
         return rgb, metrics
     elif model_name.lower() == 'pix2pix':
-        pred_t, rgb = p2p_infer_single(project_path(ckpt_path), sar_pil, image_size=image_size, device=device)
+        resolved = resolve_ckpt(ckpt_path, "pix2pix_ckpt_url")
+        pred_t, rgb = p2p_infer_single(Path(resolved), sar_pil, image_size=image_size, device=device)
         if gt_rgb is not None:
             metrics = p2p_compute_metrics(pred_t, gt_rgb, image_size=image_size, device=device)
         return rgb, metrics
@@ -180,7 +202,7 @@ with tabs[1]:
 
         # UNet
         unet_ok = False
-        if unet_ckpt and Path(unet_ckpt).suffix in {'.pt', '.pth'} and project_path(unet_ckpt).exists():
+        if unet_ckpt and Path(unet_ckpt).suffix in {'.pt', '.pth'}:
             try:
                 with st.spinner('Running UNet inference...'):
                     pred_t_unet, img_unet = run_unet_inference(unet_ckpt, sar_img, image_size)
@@ -189,14 +211,15 @@ with tabs[1]:
                     st.image(img_unet, caption='UNet Output', width="stretch")
                 unet_ok = True
             except Exception as e:
-                st.error(f'UNet failed: {e}')
+                with cols[1]:
+                    st.error(f'UNet failed: {e}')
         else:
             with cols[1]:
-                st.info('UNet checkpoint not found. Set a valid path in the sidebar.')
+                st.info('Provide a valid UNet checkpoint path ending with .pt/.pth.')
 
         # Pix2Pix
         p2p_ok = False
-        if pix2pix_ckpt and Path(pix2pix_ckpt).suffix in {'.pt', '.pth'} and project_path(pix2pix_ckpt).exists():
+        if pix2pix_ckpt and Path(pix2pix_ckpt).suffix in {'.pt', '.pth'}:
             try:
                 with st.spinner('Running Pix2Pix inference (eval script)...'):
                     # Use standardized wrapper which calls eval helpers
@@ -212,7 +235,7 @@ with tabs[1]:
                     st.error(f'Pix2Pix failed: {e}')
         else:
             with cols[2]:
-                st.info('Pix2Pix checkpoint not found. Set a valid path in the sidebar.')
+                st.info('Provide a valid Pix2Pix checkpoint path ending with .pt/.pth.')
 
         # Optionally compute and store UNet metrics now if GT provided
         if unet_ok and uploaded_rgb is not None:
