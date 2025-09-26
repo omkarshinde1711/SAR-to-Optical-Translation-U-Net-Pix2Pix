@@ -277,6 +277,112 @@ else:
         with cols[p2p_warm_col_idx]:
             st.info('Set warmstart Pix2Pix .pt/.pth path.')
 
+    # --- Horizontal composite (single row) with highlighted best metrics ---
+    try:
+        from io import BytesIO
+        from PIL import Image as PILImage, ImageDraw, ImageFont
+        metrics_map = st.session_state.get('metrics_by_model', {})
+
+        items = []  # (image, label, metrics)
+        items.append((sar_img.resize((image_size, image_size)).convert('RGB'), 'SAR', None))
+        if has_gt:
+            try:
+                gt_img = Image.open(uploaded_rgb).convert('RGB').resize((image_size, image_size))
+                items.append((gt_img, 'Ground Truth', None))
+            except Exception:
+                pass
+        if 'UNet' in pred_images:
+            try:
+                unet_im = PILImage.fromarray(img_unet)
+            except Exception:
+                import numpy as np
+                unet_arr = (denorm_rgb(pred_images['UNet']).squeeze(0).permute(1, 2, 0).cpu().numpy()*255).clip(0,255).astype('uint8')
+                unet_im = PILImage.fromarray(unet_arr)
+            items.append((unet_im, 'UNet', metrics_map.get('UNet')))
+        if 'Pix2Pix Baseline' in metrics_map or 'img_p2p_base' in locals():
+            try:
+                base_im = PILImage.fromarray(img_p2p_base)
+                items.append((base_im, 'Pix2Pix Base', metrics_map.get('Pix2Pix Baseline')))
+            except Exception:
+                pass
+        if 'Pix2Pix Warmstart' in metrics_map or 'img_p2p_warm' in locals():
+            try:
+                warm_im = PILImage.fromarray(img_p2p_warm)
+                items.append((warm_im, 'Pix2Pix Warm', metrics_map.get('Pix2Pix Warmstart')))
+            except Exception:
+                pass
+
+        # Collect metric arrays for highlighting
+        psnr_vals = {lbl: m['psnr'] for _, lbl, m in items if m and m.get('psnr') is not None}
+        ssim_vals = {lbl: m['ssim'] for _, lbl, m in items if m and m.get('ssim') is not None}
+        lpips_vals = {lbl: m['lpips'] for _, lbl, m in items if m and m.get('lpips') is not None}
+        l1_vals = {lbl: m['l1'] for _, lbl, m in items if m and m.get('l1') is not None}
+        best_psnr = max(psnr_vals.values()) if psnr_vals else None
+        best_ssim = max(ssim_vals.values()) if ssim_vals else None
+        best_lpips = min(lpips_vals.values()) if lpips_vals else None
+        best_l1 = min(l1_vals.values()) if l1_vals else None
+
+        if len(items) >= 2:
+            spacing = 12
+            label_h = 20
+            metrics_h = 40
+            tile_w = items[0][0].width
+            tile_h = items[0][0].height
+            total_w = len(items)*tile_w + (len(items)-1)*spacing
+            total_h = tile_h + label_h + metrics_h
+            composite = PILImage.new('RGB', (total_w, total_h), 'white')
+            draw = ImageDraw.Draw(composite)
+            try:
+                font = ImageFont.load_default()
+            except Exception:
+                font = None
+
+            def color_for(metric_name: str, value: float | None) -> str:
+                if value is None:
+                    return 'black'
+                if metric_name == 'PSNR' and best_psnr is not None and abs(value - best_psnr) < 1e-6:
+                    return 'green'
+                if metric_name == 'SSIM' and best_ssim is not None and abs(value - best_ssim) < 1e-9:
+                    return 'green'
+                if metric_name == 'LPIPS' and best_lpips is not None and abs(value - best_lpips) < 1e-9:
+                    return 'green'
+                if metric_name == 'L1' and best_l1 is not None and abs(value - best_l1) < 1e-9:
+                    return 'green'
+                return 'black'
+
+            x = 0
+            for img_obj, label, mdict in items:
+                composite.paste(img_obj, (x, 0))
+                if font:
+                    draw.text((x + 4, tile_h + 2), label, fill='black', font=font)
+                if mdict:
+                    psnr = mdict.get('psnr'); ssim = mdict.get('ssim'); lpips = mdict.get('lpips'); l1 = mdict.get('l1')
+                    line1 = []
+                    line2 = []
+                    if psnr is not None:
+                        line1.append(('PSNR', f"PSNR {psnr:.2f}", psnr))
+                    if ssim is not None:
+                        line1.append(('SSIM', f"SSIM {ssim:.3f}", ssim))
+                    if lpips is not None:
+                        line2.append(('LPIPS', f"LPIPS {lpips:.3f}", lpips))
+                    if l1 is not None:
+                        line2.append(('L1', f"L1 {l1:.3f}", l1))
+                    cursor_x = x + 4
+                    for mname, text, val in line1:
+                        draw.text((cursor_x, tile_h + 2 + label_h), text, fill=color_for(mname, val), font=font)
+                        cursor_x += (len(text) * 6)  # rough advance
+                    cursor_x = x + 4
+                    for mname, text, val in line2:
+                        draw.text((cursor_x, tile_h + 2 + label_h + 16), text, fill=color_for(mname, val), font=font)
+                        cursor_x += (len(text) * 6)
+                x += tile_w + spacing
+
+            buf = BytesIO()
+            composite.save(buf, format='PNG')
+            st.download_button('Download Horizontal Composite (PNG)', data=buf.getvalue(), file_name='sar_translation_composite_horizontal.png', mime='image/png')
+    except Exception as e:
+        st.warning(f'Horizontal composite generation failed: {e}')
+
     # Compute UNet metrics if GT available
     if unet_ok and has_gt:
         try:
@@ -309,7 +415,24 @@ else:
                 })
         if rows:
             df = pd.DataFrame(rows).set_index('Model')
-            st.dataframe(df.style.format({'PSNR': '{:.3f}', 'SSIM': '{:.3f}', 'LPIPS (↓)': '{:.4f}', 'L1 (↓)': '{:.4f}'}), width="stretch")
+            # Highlight best values: PSNR/SSIM max; LPIPS/L1 min
+            def highlight_best(data: pd.DataFrame):
+                styles = pd.DataFrame('', index=data.index, columns=data.columns)
+                if 'PSNR' in data.columns:
+                    max_psnr = data['PSNR'].max()
+                    styles.loc[data['PSNR'] == max_psnr, 'PSNR'] = 'background-color:#d1f7d6;font-weight:bold'
+                if 'SSIM' in data.columns:
+                    max_ssim = data['SSIM'].max()
+                    styles.loc[data['SSIM'] == max_ssim, 'SSIM'] = 'background-color:#d1f7d6;font-weight:bold'
+                if 'LPIPS (↓)' in data.columns:
+                    min_lp = data['LPIPS (↓)'].min()
+                    styles.loc[data['LPIPS (↓)'] == min_lp, 'LPIPS (↓)'] = 'background-color:#d1f7d6;font-weight:bold'
+                if 'L1 (↓)' in data.columns:
+                    min_l1 = data['L1 (↓)'].min()
+                    styles.loc[data['L1 (↓)'] == min_l1, 'L1 (↓)'] = 'background-color:#d1f7d6;font-weight:bold'
+                return styles
+            styled = df.style.format({'PSNR': '{:.3f}', 'SSIM': '{:.3f}', 'LPIPS (↓)': '{:.4f}', 'L1 (↓)': '{:.4f}'}).apply(highlight_best, axis=None)
+            st.dataframe(styled, width="stretch")
             chart_cols = st.columns(2)
             with chart_cols[0]:
                 st.markdown('PSNR / SSIM (higher better)')
