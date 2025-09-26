@@ -1,5 +1,7 @@
 # Pix2Pix (cGAN) for SAR → Optical Translation
 
+[← Back to main README](./README.md)
+
 This implementation provides a complete Pix2Pix training and evaluation pipeline for SAR to optical image translation, with comprehensive ablation studies and comparison to UNet baseline.
 
 ## Features
@@ -270,6 +272,10 @@ After training, compare results across experiments:
 4. **Statistical analysis** of test set performance
 
 The implementation provides comprehensive logging and evaluation tools for thorough analysis of the Pix2Pix approach compared to the UNet baseline.
+
+## 📊 Results (Placeholder)
+
+TODO: Insert qualitative samples and a quantitative metrics table (PSNR/SSIM/LPIPS) for Pix2Pix here.
 
 ## Pix2Pix Metrics Plots (TensorBoard export)
 

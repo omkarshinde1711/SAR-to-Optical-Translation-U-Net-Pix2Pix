@@ -1,9 +1,22 @@
-## Overview
+## SAR Image Colorization – U-Net Baseline with Pix2Pix Warmstart
 
-- **Goal**: UNet model to colorize SAR (1ch) into RGB (3ch)
-- **Stack**: Python 3.10, PyTorch, AMP, metrics (PSNR/SSIM/LPIPS), Streamlit UI
-- **OS**: Windows 10/11
-- **GPU**: NVIDIA (e.g., RTX 4060). Ensure a recent driver (check with `nvidia-smi`).
+This project tackles SAR (1-channel) → Optical RGB (3-channel) translation. We provide:
+
+- A strong U-Net baseline for direct SAR→RGB regression
+- A Pix2Pix (cGAN) implementation that can warm-start its generator from U-Net to improve realism
+- Full training/evaluation pipelines, logging, and utilities
+
+Quick links:
+- U-Net details: see `UNET_README.md`
+- Pix2Pix details: see `PIX2PIX_README.md`
+
+Stack: Python 3.10, PyTorch, AMP, PSNR/SSIM/LPIPS, Streamlit UI. Target OS: Windows 10/11 with NVIDIA GPUs.
+
+## Contribution highlights
+
+- U-Net serves as the baseline model for SAR→RGB colorization.
+- Pix2Pix (cGAN) with U-Net warmstart provides enhanced sharpness and realism.
+- Planned: side-by-side qualitative comparisons and quantitative tables (PSNR/SSIM/LPIPS).
 
 ## Dataset layout (required by `SARDataset`)
 
@@ -34,7 +47,7 @@ If your data root differs, either:
 - update `root_dir` default in `src/data_loader.py`, or
 - pass `--data-root "path\to\data"` (CLI) or set `data_root` in `scripts/train_config.py`.
 
-## Environment setup (conda + uv)
+## Environment setup (shared)
 
 1) Create/activate conda env (recommended on Windows):
 ```
@@ -64,118 +77,16 @@ uv pip install --index-url https://download.pytorch.org/whl/cpu torch torchvisio
 uv run python -c "import torch; print('torch', torch.__version__, 'cuda build', torch.version.cuda, 'GPU available', torch.cuda.is_available())"
 ```
 
-## Training
+## Model summaries
 
-Two options: config script (recommended) or CLI.
-
-### A) Config-based training
-Edit and run `scripts/train_config.py`:
-```
-CONFIG = {
-  'data_root': r"D:\\COLLEGE\\SAR\\2.7 Gb V_2\\v_2",
-  'save_dir': 'results/unet',
-  'epochs': 50,
-  'batch_size': 16,
-  'image_size': 256,
-  'num_workers': 8,
-  'lr': 2e-4,
-  'save_interval': 5,
-  'resume': '',  # e.g., 'results/unet/checkpoints/epoch_5.pt' to continue
-  'scheduler': 'plateau',  # 'none' | 'step' | 'plateau'
-  'step_size': 20,
-  'gamma': 0.5,
-}
-
-uv run python scripts/train_config.py
-```
-
-### B) CLI
-```
-uv run python scripts/train.py \
-  --data-root "D:\\COLLEGE\\SAR\\2.7 Gb V_2\\v_2" \
-  --save-dir results/unet \
-  --epochs 50 --batch-size 16 --image-size 256 --num-workers 8 \
-  --lr 2e-4 --save-interval 5 \
-  --resume results/unet/checkpoints/epoch_5.pt \
-  --scheduler plateau --gamma 0.5
-```
-
-### What you get after training
-- Checkpoints: `results/unet/checkpoints/epoch_<N>.pt` (full-state: model, optimizer, scheduler, AMP scaler, epoch)
-- Samples: `results/unet/samples/epoch_<N>.png` (input SAR, target RGB, prediction)
-- Training log: `results/unet/training_log.csv` (iteration-level L1 loss)
-- Validation metrics: `results/unet/val_metrics.csv` (PSNR/SSIM/LPIPS and val L1 per epoch)
-
-### Resume training (to avoid spikes after interruptions)
-
-When resuming, always restore the optimizer, scheduler, and AMP scaler states in addition to model weights. Otherwise, the learning-rate schedule and optimizer moments reset, which can cause visible spikes/dips in validation curves.
-
-Saved checkpoint contents:
-```
-{
-  'model': state_dict,
-  'optimizer': state_dict,
-  'scheduler': state_dict or None,
-  'scaler': state_dict or None,
-  'epoch': int
-}
-```
-
-Config-based resume (recommended):
-```
-# scripts/train_config.py
-CONFIG = {
-  # ...
-  'resume': 'results/unet/checkpoints/epoch_50.pt',
-}
-```
-
-CLI resume:
-```
-uv run python scripts/train.py \
-  --data-root "D:\\COLLEGE\\SAR\\2.7 Gb V_2\\v_2" \
-  --save-dir results/unet \
-  --epochs 100 --batch-size 16 --image-size 256 --num-workers 8 \
-  --lr 2e-4 --save-interval 5 \
-  --resume results/unet/checkpoints/epoch_50.pt \
-  --scheduler plateau --gamma 0.5
-```
-
-Notes:
-- If the original run used a scheduler but you pass `--scheduler none` when resuming, the scheduler state is ignored and a fresh scheduler (or none) is used. Keep the same scheduler settings to continue the schedule smoothly.
-- If AMP/scaler state can't be loaded (different PyTorch version), training continues with a fresh scaler.
-
-## Evaluate a single image
-```
-uv run python scripts/eval.py \
-  --checkpoint results/unet/checkpoints/epoch_50.pt \
-  --input path\\to\\sar.png \
-  --output pred.png
-```
-
-## Metrics across epochs
-Compute metrics for all checkpoints and write a CSV:
-```
-uv run python scripts/metrics_across_checkpoints.py --data-root "D:\\COLLEGE\\SAR\\2.7 Gb V_2\\v_2"
-```
-
-## Plot trends
-Generate plots (saved to `results/unet/plots/`):
-```
-uv run python scripts/plot_metrics.py
-```
-
-## Inference UI (Streamlit)
-Run a local UI to upload a SAR `.png` and select a checkpoint:
-```
-uv run streamlit run scripts/ui.py
-```
+- U-Net (baseline): direct pixel regression; fast and stable. See details and commands in `UNET_README.md`.
+- Pix2Pix (cGAN): adversarially trained for sharper, more realistic results; supports warm-start from U-Net. See `PIX2PIX_README.md`.
 
 ## Tips for RTX 4060 / GPU utilization
 - Use larger `--batch-size` until VRAM is near full (watch `nvidia-smi`).
 - AMP is enabled by default; keep it on for speed and memory savings.
 - cuDNN benchmark is enabled; keep fixed input size (e.g., 256×256).
-- Try increasing `--num-workers` for faster data loading.
+- Increase `--num-workers` if dataloading is the bottleneck.
 
 ## Troubleshooting
 - `torch.cuda.is_available() == False`: ensure `nvidia-smi` works and install CUDA-enabled wheels from the PyTorch index (not default PyPI).
@@ -235,29 +146,104 @@ The script automatically uses CPU if no GPU is available. No code changes needed
 
 ## Repository structure
 
+The layout below reflects the current repository folders and key files. Folders like `results/` and `checkpoints/` are gitignored but shown for clarity.
+
 ```
-SAR_Analysis_Project/
-  models/
-    unet.py                 # UNet architecture
-  scripts/
-    train.py                # Training loop
-    eval.py                 # Inference on a single image (CPU/GPU)
-    metrics_across_checkpoints.py
-    plot_metrics.py
-    train_config.py         # Editable config-based entrypoint
-    results/                # (ignored) training outputs; contains .gitkeep
-  src/
-    data_loader.py          # Dataset and transforms for Sentinel data
-    metrics.py              # PSNR/SSIM/LPIPS evaluation
-    __init__.py
-  results/                  # (ignored) top-level results; contains .gitkeep
-  data/                     # (ignored) local data; contains .gitkeep
-  datasets/                 # (ignored) optional datasets; contains .gitkeep
-  logs/                     # (ignored) logs; contains .gitkeep
-  requirements.txt
-  README.md
-  .gitignore
+├── PIX2PIX_README.md
+├── README.md
+├── UNET_README.md
+├── requirements.txt
+├── checkpoints/                      # (gitignored)
+│   ├── pix2pix/
+│   │   └── Place_Pix2Pix_Epoch_Checkpoint_Here
+│   └── unet/
+│       └── Place_UNet_Epoch_Checkpoint_Here
+├── configs/
+│   ├── pix2pix_batch16.yaml
+│   ├── pix2pix_default.yaml
+│   ├── pix2pix_l1_200.yaml
+│   ├── pix2pix_l1_50.yaml
+│   ├── pix2pix_lr_1e4.yaml
+│   ├── pix2pix_perceptual_5.yaml
+│   ├── pix2pix_perceptual.yaml
+│   ├── pix2pix_spectral_norm.yaml
+│   └── pix2pix_warmstart.yaml
+├── datasets/
+│   ├── Place_Dataset_Here_(v_2)/
+│   └── v_2/
+│       ├── agri/
+│       │   ├── s1/
+│       │   └── s2/
+│       ├── barrenland/
+│       │   ├── s1/
+│       │   └── s2/
+│       ├── grassland/
+│       │   ├── s1/
+│       │   ├── s2/
+│       │   ├── TEMP/
+│       │   └── TEMP.zip
+│       └── urban/
+│           ├── s1/
+│           └── s2/
+├── models/
+│   ├── pix2pix.py
+│   ├── unet.py
+│   └── __pycache__/               # (gitignored)
+├── results/                        # (gitignored)
+│   ├── pix2pix/
+│   │   ├── pix2pix_20250920_005609/
+│   │   │   ├── config.yaml
+│   │   │   ├── training.log
+│   │   │   ├── checkpoints/
+│   │   │   ├── plots/
+│   │   │   ├── tensorboard/
+│   │   │   └── tensorboard_exports/
+│   │   └── warmstart/
+│   │       ├── config.yaml
+│   │       ├── training.log
+│   │       ├── checkpoints/
+│   │       └── tensorboard/
+│   └── unet/
+│       ├── metrics_by_epoch.csv
+│       ├── training_log.csv
+│       ├── val_metrics.csv
+│       ├── checkpoints/
+│       │   ├── epoch_10.pt
+│       │   ├── epoch_11.pt
+│       │   ├── epoch_12.pt
+│       │   ├── ...               # many epoch_*.pt
+│       │   └── epoch_100.pt
+│       ├── plots/
+│       └── samples/
+├── scripts/
+│   ├── eval_pix2pix.py
+│   ├── eval.py
+│   ├── generate_samples.py
+│   ├── gpu.py
+│   ├── metrics_across_checkpoints.py
+│   ├── pix2pix_metric_export_from_tensorboard
+│   ├── plot_metrics_pix2pix.py
+│   ├── plot_metrics.py
+│   ├── run_pix2pix_experiments.py
+│   ├── train_config.py
+│   ├── train_pix2pix.py
+│   ├── train.py
+│   └── ui.py
+└── src/
+  ├── __init__.py
+  ├── data_loader.py
+  ├── metrics.py
+  └── __pycache__/               # (gitignored)
 ```
 
-- Directories marked "(ignored)" are excluded from git to keep the repo lightweight; `.gitkeep` files are present so the folder structure remains visible when cloning.
-- Checkpoints (`*.pt`, `*.pth`) are ignored. Share a download link so others can place a weight file and run `scripts/eval.py` on CPU or GPU.
+- Folders `results/` and `checkpoints/` are gitignored to keep the repository lightweight.
+- Example checkpoint names (e.g., `epoch_10.pt`, `epoch_100.pt`) are shown to illustrate typical contents.
+
+## Results (Placeholder)
+
+TODO: Insert qualitative (images) and quantitative (metrics table) results comparing U-Net vs Pix2Pix (with and without warmstart).
+
+## References
+
+- Ronneberger et al., U-Net: Convolutional Networks for Biomedical Image Segmentation
+- Isola et al., Image-to-Image Translation with Conditional Adversarial Networks (Pix2Pix)
