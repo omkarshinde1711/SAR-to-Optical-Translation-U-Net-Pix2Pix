@@ -142,7 +142,10 @@ def run_inference(model_name: str, ckpt_path: str, sar_pil: Image.Image, image_s
             metrics = m
         return rgb, metrics
     elif model_name.lower() == 'pix2pix':
-        resolved = resolve_ckpt(ckpt_path, "pix2pix_ckpt_url")
+        # Decide secret key based on path hint (warmstart vs baseline)
+        path_norm = ckpt_path.replace('\\', '/').lower()
+        secret_key = "pix2pix_warmstart_ckpt_url" if "warmstart" in path_norm else "pix2pix_ckpt_url"
+        resolved = resolve_ckpt(ckpt_path, secret_key)
         pred_t, rgb = p2p_infer_single(Path(resolved), sar_pil, image_size=image_size, device=device)
         if gt_rgb is not None:
             metrics = p2p_compute_metrics(pred_t, gt_rgb, image_size=image_size, device=device)
@@ -154,248 +157,145 @@ def run_inference(model_name: str, ckpt_path: str, sar_pil: Image.Image, image_s
 # --- Sidebar controls
 st.sidebar.header('Model Checkpoints')
 default_unet_ckpt = project_path('results/unet/checkpoints/epoch_100.pt')
-default_p2p_ckpt = project_path('results/pix2pix/warmstart/checkpoints/best_by_val_lpips.pt')
+default_p2p_baseline_ckpt = project_path('results/pix2pix/pix2pix_20250920_005609/checkpoints/best_by_val_lpips.pt')
+default_p2p_warm_ckpt = project_path('results/pix2pix/warmstart/checkpoints/best_by_val_lpips.pt')
 
 unet_ckpt = st.sidebar.text_input('UNet checkpoint path', str(default_unet_ckpt))
-pix2pix_ckpt = st.sidebar.text_input('Pix2Pix generator checkpoint path', str(default_p2p_ckpt))
+pix2pix_baseline_ckpt = st.sidebar.text_input('Pix2Pix (baseline) checkpoint path', str(default_p2p_baseline_ckpt))
+pix2pix_warm_ckpt = st.sidebar.text_input('Pix2Pix (warmstart) checkpoint path', str(default_p2p_warm_ckpt))
 
 image_size = st.sidebar.number_input('Image size', min_value=64, max_value=1024, value=256, step=32)
 
 
-# --- Tabs layout
-tabs = st.tabs(["Inputs", "Inference", "Metrics", "Training Logs"])
+######### Unified Page (Inputs + Inference + Metrics) #########
+st.header('Upload & Inference')
+col_up1, col_up2 = st.columns(2)
+with col_up1:
+    uploaded_sar = st.file_uploader('SAR image (PNG/JPG/TIF)', type=['png', 'jpg', 'jpeg', 'tif', 'tiff'], key='sar_upload')
+    st.caption('Converted to 1-channel (L), normalized to [-1,1].')
+with col_up2:
+    uploaded_rgb = st.file_uploader('Optional Ground Truth RGB (PNG/JPG)', type=['png', 'jpg', 'jpeg'], key='rgb_upload')
+    st.caption('Provide to enable PSNR / SSIM / LPIPS / L1 metrics.')
 
-
-# --- Inputs tab
-with tabs[0]:
-    st.subheader('Upload Images')
-    col_in1, col_in2 = st.columns([1, 1])
-    with col_in1:
-        uploaded_sar = st.file_uploader('Upload SAR image (PNG/JPG/TIF)', type=['png', 'jpg', 'jpeg', 'tif', 'tiff'], key='sar_upload')
-        st.caption('SAR will be converted to single-channel (L), normalized to [-1,1].')
-    with col_in2:
-        uploaded_rgb = st.file_uploader('Optional: Upload Ground Truth RGB (PNG/JPG)', type=['png', 'jpg', 'jpeg'], key='rgb_upload')
-        st.caption('Provide to compute PSNR/SSIM/LPIPS/L1. If omitted, metrics are not computed.')
-
-    if uploaded_sar:
+if not uploaded_sar:
+    st.info('Upload a SAR image to run inference.')
+else:
+    pred_images = {}
+    base_t, norm_sar, norm_rgb = build_transforms(image_size)
+    sar_img = Image.open(uploaded_sar).convert('L')
+    has_gt = uploaded_rgb is not None
+    # Columns: Input | (GT) | UNet | Pix2Pix Baseline | Pix2Pix Warmstart
+    num_cols = 5 if has_gt else 4
+    cols = st.columns(num_cols)
+    with cols[0]:
+        st.image(sar_img.resize((image_size, image_size)), caption='Input SAR', use_container_width=True)
+    if has_gt:
         try:
-            img_sar_disp = Image.open(uploaded_sar).convert('L')
-            st.image(img_sar_disp, caption='Uploaded SAR (grayscale)', width="stretch")
-        except Exception as e:
-            st.error(f'Failed to read SAR image: {e}')
-    else:
-        st.info('Please upload a SAR image to proceed.')
-
-
-# --- Inference tab
-pred_images = {}
-with tabs[1]:
-    st.subheader('Model Inference')
-    if not uploaded_sar:
-        st.warning('Upload a SAR image in the Inputs tab.')
-    else:
-        base_t, norm_sar, norm_rgb = build_transforms(image_size)
-        sar_img = Image.open(uploaded_sar).convert('L')
-        cols = st.columns(3)
-        with cols[0]:
-            st.image(sar_img.resize((image_size, image_size)), caption='Input SAR', width="stretch")
-
-        # UNet
-        unet_ok = False
-        if unet_ckpt and Path(unet_ckpt).suffix in {'.pt', '.pth'}:
-            try:
-                with st.spinner('Running UNet inference...'):
-                    pred_t_unet, img_unet = run_unet_inference(unet_ckpt, sar_img, image_size)
-                    pred_images['UNet'] = pred_t_unet
-                with cols[1]:
-                    st.image(img_unet, caption='UNet Output', width="stretch")
-                unet_ok = True
-            except Exception as e:
-                with cols[1]:
-                    st.error(f'UNet failed: {e}')
-        else:
+            gt_img_disp = Image.open(uploaded_rgb).convert('RGB').resize((image_size, image_size))
             with cols[1]:
-                st.info('Provide a valid UNet checkpoint path ending with .pt/.pth.')
+                st.image(gt_img_disp, caption='Ground Truth RGB', use_container_width=True)
+        except Exception as e:
+            with cols[1]:
+                st.error(f'GT load error: {e}')
+    unet_col_idx = 2 if has_gt else 1
+    p2p_base_col_idx = unet_col_idx + 1
+    p2p_warm_col_idx = unet_col_idx + 2
 
-        # Pix2Pix
-        p2p_ok = False
-        if pix2pix_ckpt and Path(pix2pix_ckpt).suffix in {'.pt', '.pth'}:
-            try:
-                with st.spinner('Running Pix2Pix inference (eval script)...'):
-                    # Use standardized wrapper which calls eval helpers
-                    img_p2p, m_p2p = run_inference('pix2pix', pix2pix_ckpt, sar_img, image_size, gt_rgb=Image.open(uploaded_rgb).convert('RGB') if 'uploaded_rgb' in locals() and uploaded_rgb else None)
-                with cols[2]:
-                    st.image(img_p2p, caption='Pix2Pix Output', width="stretch")
-                p2p_ok = True
-                # Save metrics if available
-                if m_p2p is not None:
-                    st.session_state.setdefault('metrics_by_model', {})['Pix2Pix'] = m_p2p
-            except Exception as e:
-                with cols[2]:
-                    st.error(f'Pix2Pix failed: {e}')
-        else:
-            with cols[2]:
-                st.info('Provide a valid Pix2Pix checkpoint path ending with .pt/.pth.')
+    # UNet inference
+    unet_ok = False
+    if unet_ckpt and Path(unet_ckpt).suffix in {'.pt', '.pth'}:
+        try:
+            with st.spinner('UNet inference...'):
+                pred_t_unet, img_unet = run_unet_inference(unet_ckpt, sar_img, image_size)
+                pred_images['UNet'] = pred_t_unet
+            with cols[unet_col_idx]:
+                st.image(img_unet, caption='UNet Output', use_container_width=True)
+            unet_ok = True
+        except Exception as e:
+            with cols[unet_col_idx]:
+                st.error(f'UNet failed: {e}')
+    else:
+        with cols[unet_col_idx]:
+            st.info('Set a valid UNet .pt/.pth path.')
 
-        # Optionally compute and store UNet metrics now if GT provided
-        if unet_ok and uploaded_rgb is not None:
-            try:
-                evaluator = MetricsEvaluator(device)
-                base_t, _, norm_rgb = build_transforms(image_size)
-                t = norm_rgb(base_t(Image.open(uploaded_rgb).convert('RGB'))).unsqueeze(0).to(device)
-                with torch.no_grad():
-                    m = evaluator.evaluate_batch(pred_images['UNet'].to(device), t)
-                    m['l1'] = F.l1_loss(pred_images['UNet'].to(device), t).item()
-                st.session_state.setdefault('metrics_by_model', {})['UNet'] = m
-            except Exception:
-                pass
+    # Pix2Pix baseline inference
+    if pix2pix_baseline_ckpt and Path(pix2pix_baseline_ckpt).suffix in {'.pt', '.pth'}:
+        try:
+            with st.spinner('Pix2Pix (baseline) inference...'):
+                img_p2p_base, m_p2p_base = run_inference('pix2pix', pix2pix_baseline_ckpt, sar_img, image_size, gt_rgb=Image.open(uploaded_rgb).convert('RGB') if has_gt else None)
+            with cols[p2p_base_col_idx]:
+                st.image(img_p2p_base, caption='Pix2Pix Baseline', use_container_width=True)
+            if m_p2p_base is not None:
+                st.session_state.setdefault('metrics_by_model', {})['Pix2Pix Baseline'] = m_p2p_base
+        except Exception as e:
+            with cols[p2p_base_col_idx]:
+                st.error(f'Pix2Pix Baseline failed: {e}')
+    else:
+        with cols[p2p_base_col_idx]:
+            st.info('Set baseline Pix2Pix .pt/.pth path.')
 
+    # Pix2Pix warmstart inference
+    if pix2pix_warm_ckpt and Path(pix2pix_warm_ckpt).suffix in {'.pt', '.pth'}:
+        try:
+            with st.spinner('Pix2Pix (warmstart) inference...'):
+                img_p2p_warm, m_p2p_warm = run_inference('pix2pix', pix2pix_warm_ckpt, sar_img, image_size, gt_rgb=Image.open(uploaded_rgb).convert('RGB') if has_gt else None)
+            with cols[p2p_warm_col_idx]:
+                st.image(img_p2p_warm, caption='Pix2Pix Warmstart', use_container_width=True)
+            if m_p2p_warm is not None:
+                st.session_state.setdefault('metrics_by_model', {})['Pix2Pix Warmstart'] = m_p2p_warm
+        except Exception as e:
+            with cols[p2p_warm_col_idx]:
+                st.error(f'Pix2Pix Warmstart failed: {e}')
+    else:
+        with cols[p2p_warm_col_idx]:
+            st.info('Set warmstart Pix2Pix .pt/.pth path.')
 
-# --- Metrics tab
-with tabs[2]:
+    # Compute UNet metrics if GT available
+    if unet_ok and has_gt:
+        try:
+            evaluator = MetricsEvaluator(device)
+            target_rgb = Image.open(uploaded_rgb).convert('RGB')
+            _, _, norm_rgb_local = build_transforms(image_size)
+            t = norm_rgb_local(base_t(target_rgb)).unsqueeze(0).to(device)
+            with torch.no_grad():
+                m = evaluator.evaluate_batch(pred_images['UNet'].to(device), t)
+                m['l1'] = F.l1_loss(pred_images['UNet'].to(device), t).item()
+            st.session_state.setdefault('metrics_by_model', {})['UNet'] = m
+        except Exception:
+            pass
+
+    # Metrics section
     st.subheader('Per-image Metrics')
-    if not uploaded_sar:
-        st.info('Upload a SAR image to compute metrics.')
+    if not has_gt:
+        st.info('Provide a ground truth RGB image to compute metrics.')
     else:
         metrics_cached = st.session_state.get('metrics_by_model')
-        if not pred_images and not metrics_cached:
-            st.info('Run inference first (Inference tab).')
+        rows = []
+        if metrics_cached:
+            for name, m in metrics_cached.items():
+                rows.append({
+                    'Model': name,
+                    'PSNR': m.get('psnr', float('nan')),
+                    'SSIM': m.get('ssim', float('nan')),
+                    'LPIPS (↓)': m.get('lpips', float('nan')),
+                    'L1 (↓)': m.get('l1', float('nan')),
+                })
+        if rows:
+            df = pd.DataFrame(rows).set_index('Model')
+            st.dataframe(df.style.format({'PSNR': '{:.3f}', 'SSIM': '{:.3f}', 'LPIPS (↓)': '{:.4f}', 'L1 (↓)': '{:.4f}'}), width="stretch")
+            chart_cols = st.columns(2)
+            with chart_cols[0]:
+                st.markdown('PSNR / SSIM (higher better)')
+                df_higher = df[['PSNR', 'SSIM']].reset_index().melt(id_vars='Model', var_name='Metric', value_name='Value')
+                fig1 = px.bar(df_higher, x='Model', y='Value', color='Metric', barmode='group', title=None)
+                st.plotly_chart(fig1, use_container_width=True, config={"displaylogo": False})
+            with chart_cols[1]:
+                st.markdown('LPIPS / L1 (lower better)')
+                df_lower = df[['LPIPS (↓)', 'L1 (↓)']].reset_index().melt(id_vars='Model', var_name='Metric', value_name='Value')
+                fig2 = px.bar(df_lower, x='Model', y='Value', color='Metric', barmode='group', title=None)
+                st.plotly_chart(fig2, use_container_width=True, config={"displaylogo": False})
         else:
-            if uploaded_rgb is None:
-                st.warning('Ground truth RGB not provided. Metrics require a target image.')
-            else:
-                rows = []
-                if metrics_cached:
-                    for name, m in metrics_cached.items():
-                        rows.append({
-                            'Model': name,
-                            'PSNR': m.get('psnr', float('nan')),
-                            'SSIM': m.get('ssim', float('nan')),
-                            'LPIPS (↓)': m.get('lpips', float('nan')),
-                            'L1 (↓)': m.get('l1', float('nan')),
-                        })
-                else:
-                    # Fallback: compute on the fly using predictions
-                    base_t, _, norm_rgb = build_transforms(image_size)
-                    target_rgb = Image.open(uploaded_rgb).convert('RGB')
-                    t = norm_rgb(base_t(target_rgb)).unsqueeze(0).to(device)
-                    for name, pred in pred_images.items():
-                        with torch.no_grad():
-                            if name.lower() == 'pix2pix':
-                                m = p2p_compute_metrics(pred, target_rgb, image_size=image_size, device=device)
-                            else:
-                                evaluator = MetricsEvaluator(device)
-                                m = evaluator.evaluate_batch(pred.to(device), t)
-                                m['l1'] = F.l1_loss(pred.to(device), t).item()
-                        rows.append({
-                            'Model': name,
-                            'PSNR': m['psnr'],
-                            'SSIM': m['ssim'],
-                            'LPIPS (↓)': m['lpips'],
-                            'L1 (↓)': m['l1'],
-                        })
-                df = pd.DataFrame(rows).set_index('Model')
-                st.dataframe(df.style.format({'PSNR': '{:.3f}', 'SSIM': '{:.3f}', 'LPIPS (↓)': '{:.4f}', 'L1 (↓)': '{:.4f}'}), width="stretch")
+            st.info('Run inference with checkpoints to populate metrics.')
 
-                # Comparison charts
-                chart_cols = st.columns(2)
-                with chart_cols[0]:
-                    st.markdown('Comparison: PSNR / SSIM (higher is better)')
-                    df_higher = df[['PSNR', 'SSIM']].reset_index().melt(id_vars='Model', var_name='Metric', value_name='Value')
-                    fig1 = px.bar(df_higher, x='Model', y='Value', color='Metric', barmode='group', title=None)
-                    st.plotly_chart(fig1, width="stretch")
-                with chart_cols[1]:
-                    st.markdown('Comparison: LPIPS / L1 (lower is better)')
-                    df_lower = df[['LPIPS (↓)', 'L1 (↓)']].reset_index().melt(id_vars='Model', var_name='Metric', value_name='Value')
-                    fig2 = px.bar(df_lower, x='Model', y='Value', color='Metric', barmode='group', title=None)
-                    st.plotly_chart(fig2, width="stretch")
-
-
-# --- Training Logs tab
-with tabs[3]:
-    st.subheader('Metrics across epochs (from logs)')
-    log_cols = st.columns(2)
-
-    # UNet logs
-    with log_cols[0]:
-        st.markdown('UNet validation metrics')
-        unet_val_csv = project_path('results/unet/val_metrics.csv')
-        if unet_val_csv.exists():
-            try:
-                df_u = pd.read_csv(unet_val_csv)
-                # Expected columns: epoch, val_l1, psnr, ssim, lpips (some names may vary)
-                # Normalize column names
-                cols = {c.lower(): c for c in df_u.columns}
-                # Map possible variants
-                epoch_col = cols.get('epoch', 'epoch')
-                psnr_col = cols.get('psnr', 'psnr')
-                ssim_col = cols.get('ssim', 'ssim')
-                lpips_col = cols.get('lpips', 'lpips') if 'lpips' in cols else None
-                l1_col = cols.get('val_l1', 'val_l1') if 'val_l1' in cols else (cols.get('l1') if 'l1' in cols else None)
-
-                plots = []
-                for metric_name, col in [('PSNR', psnr_col), ('SSIM', ssim_col)]:
-                    if col in df_u.columns:
-                        fig = px.line(df_u, x=epoch_col, y=col, title=f'UNet {metric_name} vs Epoch')
-                        st.plotly_chart(fig, width="stretch")
-                if lpips_col and lpips_col in df_u.columns:
-                    fig = px.line(df_u, x=epoch_col, y=lpips_col, title='UNet LPIPS vs Epoch')
-                    st.plotly_chart(fig, width="stretch")
-                if l1_col and l1_col in df_u.columns:
-                    fig = px.line(df_u, x=epoch_col, y=l1_col, title='UNet L1 vs Epoch')
-                    st.plotly_chart(fig, width="stretch")
-            except Exception as e:
-                st.error(f'Failed to read UNet logs: {e}')
-        else:
-            st.info('No UNet val_metrics.csv found at results/unet/val_metrics.csv')
-
-    # Pix2Pix logs
-    with log_cols[1]:
-        st.markdown('Pix2Pix validation metrics')
-        # Try to discover a CSV under results/pix2pix/**
-        pix2pix_root = project_path('results/pix2pix')
-        found_csv = None
-        if pix2pix_root.exists():
-            for p in sorted(pix2pix_root.rglob('*.csv')):
-                # heuristics: pick a csv that has typical metric columns
-                try:
-                    df_tmp = pd.read_csv(p, nrows=1)
-                    cols = set(c.lower() for c in df_tmp.columns)
-                    if {'epoch'} & cols and ({'psnr', 'ssim'} & cols or {'val_psnr', 'val_ssim'} & cols or {'lpips', 'val_lpips'} & cols):
-                        found_csv = p
-                        break
-                except Exception:
-                    continue
-        if found_csv:
-            st.caption(f'Using: {found_csv.relative_to(PROJECT_ROOT)}')
-            try:
-                df_p = pd.read_csv(found_csv)
-                cols = {c.lower(): c for c in df_p.columns}
-                epoch_col = cols.get('epoch', 'epoch')
-                for name_variant in [('PSNR', ('psnr', 'val_psnr')), ('SSIM', ('ssim', 'val_ssim')), ('LPIPS', ('lpips', 'val_lpips')), ('L1', ('l1', 'val_l1'))]:
-                    label, choices = name_variant
-                    for ch in choices:
-                        if ch in cols:
-                            colname = cols[ch]
-                            fig = px.line(df_p, x=epoch_col, y=colname, title=f'Pix2Pix {label} vs Epoch')
-                            st.plotly_chart(fig, width="stretch")
-                            break
-            except Exception as e:
-                st.error(f'Failed to read Pix2Pix logs: {e}')
-        else:
-            st.info('No Pix2Pix metrics CSV discovered under results/pix2pix/.')
-
-    with st.expander('Generate fresh plots via plotter (optional)'):
-        st.caption('This uses scripts/plot_metrics.py for UNet plots and will overwrite images in results/unet/plots.')
-        if st.button('Run plotter'):
-            try:
-                # Best-effort import and run main from plot_metrics
-                from scripts.plot_metrics import main as plot_main
-                plot_main()
-                st.success('Plotting completed. Check results/unet/plots for images.')
-            except Exception as e:
-                st.error(f'Plotting failed: {e}')
-
-
-st.caption('Tip: Run with uv: uv run streamlit run scripts/ui.py')
+st.caption('Tip: Run with: uv run streamlit run scripts/ui.py')
 
