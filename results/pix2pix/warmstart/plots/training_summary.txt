@@ -1,0 +1,66 @@
+Training Results Summary
+==============================
+
+G Loss:
+  Best: 19.9255 (Epoch 33)
+  Final: 21.1662 (Epoch 43)
+
+D Loss:
+  Best: 0.2509 (Epoch 43)
+  Final: 0.2509 (Epoch 43)
+
+Adv Loss:
+  Best: 1.6173 (Epoch 16)
+  Final: 2.6284 (Epoch 43)
+
+Recon Loss:
+  Best: 0.1815 (Epoch 35)
+  Final: 0.1854 (Epoch 43)
+
+Perc Loss:
+  Best: 0.0000 (Epoch 0)
+  Final: 0.0000 (Epoch 43)
+
+Psnr:
+  Best: 17.6200 (Epoch 35)
+  Final: 17.4542 (Epoch 43)
+
+Ssim:
+  Best: 0.2843 (Epoch 34)
+  Final: 0.2714 (Epoch 43)
+
+Lpips:
+  Best: 0.6753 (Epoch 0)
+  Final: 0.4728 (Epoch 43)
+
+Val G Loss:
+  Best: 21.3382 (Epoch 32)
+  Final: 21.7121 (Epoch 43)
+
+Val D Loss:
+  Best: 0.6318 (Epoch 3)
+  Final: 0.7047 (Epoch 43)
+
+Val Adv Loss:
+  Best: 0.7527 (Epoch 23)
+  Final: 1.0453 (Epoch 43)
+
+Val Recon Loss:
+  Best: 0.2022 (Epoch 32)
+  Final: 0.2067 (Epoch 43)
+
+Val Perc Loss:
+  Best: 0.0000 (Epoch 0)
+  Final: 0.0000 (Epoch 43)
+
+Val Psnr:
+  Best: 16.8115 (Epoch 37)
+  Final: 16.6304 (Epoch 43)
+
+Val Ssim:
+  Best: 0.2521 (Epoch 32)
+  Final: 0.2358 (Epoch 43)
+
+Val Lpips:
+  Best: 0.6415 (Epoch 1)
+  Final: 0.4876 (Epoch 43)

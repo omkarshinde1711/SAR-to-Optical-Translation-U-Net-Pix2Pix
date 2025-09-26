@@ -26,6 +26,6 @@ def export_tensorboard_data(logdir, output_dir):
 
 # Usage
 export_tensorboard_data(
-    'results/pix2pix/pix2pix_20250920_005609/tensorboard',
-    'results/pix2pix/pix2pix_20250920_005609/tensorboard_exports'
+    'results/pix2pix/warmstart/tensorboard',
+    'results/pix2pix/warmstart/tensorboard_exports'
 )

@@ -134,8 +134,8 @@ def create_summary_report(logdir, output_dir):
 # Usage examples
 if __name__ == "__main__":
     # Replace with your actual paths
-    logdir = 'results/pix2pix/pix2pix_20250920_005609/tensorboard'
-    output_dir = 'results/pix2pix/pix2pix_20250920_005609/plots'
+    logdir = 'results/pix2pix/warmstart/tensorboard'
+    output_dir = 'results/pix2pix/warmstart/plots'
     
     # Export individual plots only
     export_tensorboard_plots(logdir, output_dir)
