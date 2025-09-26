@@ -10,7 +10,7 @@ from PIL import Image
 from torchvision.transforms import v2
 import pandas as pd
 import plotly.express as px
-from typing import Any, Tuple
+from typing import Any, Tuple, Sequence
 
 
 # --- Project paths and imports
@@ -42,22 +42,31 @@ def denorm_rgb(t: torch.Tensor) -> torch.Tensor:
     return (t.clamp(-1, 1) + 1) / 2
 
 
-def resolve_ckpt(ckpt_path: str, secret_key: str) -> str:
-    """
-    Resolve a checkpoint path:
-      - if exists locally -> return absolute path
-      - else, download from Hugging Face URL in st.secrets[secret_key] to the intended local path
+def resolve_ckpt(ckpt_path: str, secret_key: str | Sequence[str]) -> str:
+    """Resolve a checkpoint path.
+
+    Order of operations:
+      1. If ckpt_path exists locally -> return it.
+      2. Else, try one or more secret keys (string or list of strings). For the first
+         secret that exists in st.secrets, download to the desired local path and return it.
+      3. If none succeed, raise FileNotFoundError.
+
+    This allows using separate secrets for baseline vs warmstart Pix2Pix (e.g.,
+    pix2pix_ckpt_url, pix2pix_warmstart_ckpt_url) while sharing the same function.
     """
     target = project_path(ckpt_path)
     if target.exists():
         return str(target)
-    url = st.secrets.get(secret_key)
-    if url:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with st.spinner(f"Downloading checkpoint from Hugging Face ({secret_key})..."):
-            urllib.request.urlretrieve(url, str(target))
-        return str(target)
-    raise FileNotFoundError(f"Checkpoint not found locally and no secret '{secret_key}' configured.")
+    keys: Sequence[str] = [secret_key] if isinstance(secret_key, str) else secret_key
+    for k in keys:
+        url = st.secrets.get(k)
+        if url:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with st.spinner(f"Downloading checkpoint from Hugging Face ({k})..."):
+                urllib.request.urlretrieve(url, str(target))
+            return str(target)
+    raise FileNotFoundError(
+        f"Checkpoint '{ckpt_path}' not found locally and none of the provided secrets ({', '.join(keys)}) are configured.")
 
 
 # --- Transforms
@@ -144,8 +153,11 @@ def run_inference(model_name: str, ckpt_path: str, sar_pil: Image.Image, image_s
     elif model_name.lower() == 'pix2pix':
         # Decide secret key based on path hint (warmstart vs baseline)
         path_norm = ckpt_path.replace('\\', '/').lower()
-        secret_key = "pix2pix_warmstart_ckpt_url" if "warmstart" in path_norm else "pix2pix_ckpt_url"
-        resolved = resolve_ckpt(ckpt_path, secret_key)
+        # If ambiguous, pass both keys so either baseline or warmstart secret can satisfy the request
+        if "warmstart" in path_norm:
+            resolved = resolve_ckpt(ckpt_path, ["pix2pix_warmstart_ckpt_url", "pix2pix_ckpt_url"])  # prefer warmstart
+        else:
+            resolved = resolve_ckpt(ckpt_path, ["pix2pix_ckpt_url", "pix2pix_warmstart_ckpt_url"])  # prefer baseline
         pred_t, rgb = p2p_infer_single(Path(resolved), sar_pil, image_size=image_size, device=device)
         if gt_rgb is not None:
             metrics = p2p_compute_metrics(pred_t, gt_rgb, image_size=image_size, device=device)
@@ -163,6 +175,21 @@ default_p2p_warm_ckpt = project_path('results/pix2pix/warmstart/checkpoints/best
 unet_ckpt = st.sidebar.text_input('UNet checkpoint path', str(default_unet_ckpt))
 pix2pix_baseline_ckpt = st.sidebar.text_input('Pix2Pix (baseline) checkpoint path', str(default_p2p_baseline_ckpt))
 pix2pix_warm_ckpt = st.sidebar.text_input('Pix2Pix (warmstart) checkpoint path', str(default_p2p_warm_ckpt))
+
+# Optional prefetch button for all three (downloads if missing)
+if st.sidebar.button('Prefetch (download) checkpoints'):
+    prefetch_msgs = []
+    for path, keys in [
+        (unet_ckpt, ["unet_ckpt_url"]),
+        (pix2pix_baseline_ckpt, ["pix2pix_ckpt_url", "pix2pix_warmstart_ckpt_url"]),
+        (pix2pix_warm_ckpt, ["pix2pix_warmstart_ckpt_url", "pix2pix_ckpt_url"]),
+    ]:
+        try:
+            resolved = resolve_ckpt(path, keys)
+            prefetch_msgs.append(f"✔ {Path(resolved).name}")
+        except Exception as e:
+            prefetch_msgs.append(f"✖ {Path(path).name}: {e}")
+    st.sidebar.write('\n'.join(prefetch_msgs))
 
 image_size = st.sidebar.number_input('Image size', min_value=64, max_value=1024, value=256, step=32)
 
