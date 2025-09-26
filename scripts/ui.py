@@ -168,9 +168,10 @@ def run_inference(model_name: str, ckpt_path: str, sar_pil: Image.Image, image_s
 
 # --- Sidebar controls
 st.sidebar.header('Model Checkpoints')
-default_unet_ckpt = project_path('results/unet/checkpoints/epoch_100.pt')
-default_p2p_baseline_ckpt = project_path('results/pix2pix/pix2pix_20250920_005609/checkpoints/best_by_val_lpips.pt')
-default_p2p_warm_ckpt = project_path('results/pix2pix/warmstart/checkpoints/best_by_val_lpips.pt')
+# Updated defaults per user request (only these three are hosted remotely)
+default_unet_ckpt = project_path('results/unet/checkpoints/epoch_99.pt')
+default_p2p_baseline_ckpt = project_path('results/pix2pix/pix2pix_20250920_005609/checkpoints/epoch_35.pt')
+default_p2p_warm_ckpt = project_path('results/pix2pix/warmstart/checkpoints/final.pt')
 
 unet_ckpt = st.sidebar.text_input('UNet checkpoint path', str(default_unet_ckpt))
 pix2pix_baseline_ckpt = st.sidebar.text_input('Pix2Pix (baseline) checkpoint path', str(default_p2p_baseline_ckpt))
