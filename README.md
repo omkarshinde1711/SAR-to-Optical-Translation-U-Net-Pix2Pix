@@ -247,3 +247,5 @@ TODO: Insert qualitative (images) and quantitative (metrics table) results compa
 
 - Ronneberger et al., U-Net: Convolutional Networks for Biomedical Image Segmentation
 - Isola et al., Image-to-Image Translation with Conditional Adversarial Networks (Pix2Pix)
+
+- Ankur
